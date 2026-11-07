@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>台湾天気ビューア 臺灣天氣</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <h1>台湾天気ビューア <small>臺灣天氣</small></h1>
+  <nav id="tabs">
+    <button data-tab="radar">レーダー 雷達</button>
+    <button data-tab="obs">観測 觀測</button>
+    <button data-tab="about">仕組み 說明</button>
+  </nav>
+</header>
+
+<!-- レーダータブの上部: 状態と時刻 -->
+<div class="bar" id="radarBar" hidden>
+  <div class="row">
+    <span id="rTime" class="time">-</span>
+    <button id="rReload" title="再読込 重新載入">↻</button>
+  </div>
+  <div id="rStatus" class="status">取得中… 取得中…</div>
+</div>
+
+<!-- 観測タブの上部: 種別・凡例・状態 -->
+<div class="bar" id="obsBar" hidden>
+  <div class="row">
+    <select id="obsKind" aria-label="種別 種類">
+      <option value="wind">風 風向風速</option>
+      <option value="temp">気温 氣溫</option>
+      <option value="dew">露点 露點</option>
+      <option value="hum">湿度 濕度</option>
+      <option value="rain">当日雨量 當日累積雨量</option>
+    </select>
+    <button id="obsReload" title="再読込 重新載入">↻</button>
+  </div>
+  <div id="obsLegend" class="legend"></div>
+  <div id="obsStatus" class="status">取得中… 取得中…</div>
+</div>
+
+<div id="map"></div>
+
+<!-- レーダータブの下部: 再生・スライダー・不透明度・凡例 -->
+<div class="bar bottom" id="radarBottom" hidden>
+  <div class="row">
+    <button id="rPlay">▶ 再生 播放</button>
+    <input id="rSlider" type="range" min="0" max="0" value="0" aria-label="時刻 時間">
+  </div>
+  <div class="row">
+    <label class="opa">不透明度 透明度
+      <input id="rOpacity" type="range" min="0.2" max="1" step="0.05" value="0.75">
+    </label>
+  </div>
+  <div id="rLegend" class="gradbar" title="反射強度 回波強度 (dBZ)"></div>
+  <div class="ticks"><span>0</span><span>20</span><span>40</span><span>60 dBZ</span></div>
+</div>
+
+<section id="about" hidden>
+  <h2>このアプリについて 關於本站</h2>
+  <p>台湾（臺灣）の天気を、気象署の公開データで見る学習・実験用のWebアプリです。キーや登録は不要で、すべてブラウザだけで動きます。<br>
+     以臺灣中央氣象署的公開資料顯示天氣的學習實驗用網頁。不需要金鑰或註冊，全部在瀏覽器內運作。</p>
+
+  <h3>データの流れ 資料流程</h3>
+  <ol>
+    <li><b>レーダー 雷達</b>: 気象署の画像を <a href="https://github.com/masauehr/taiwan-radar-frames">taiwan-radar-frames</a> が10分ごとに取得し、背景を透明にして過去3時間分を配信。このアプリはそれを読み込んでループ再生します。</li>
+    <li><b>観測 觀測</b>: 気象署が10分ごとに公開する地上観測（有人・主要局 約360地点）を、ブラウザが直接取得します。</li>
+  </ol>
+
+  <h3>時刻について 關於時間</h3>
+  <p>表示時刻は<b>観測時刻</b>です。観測から公開までに数分〜十数分かかるため、「◯分前」が表示されます。日本時間（JST）と台北時間（台北は日本より1時間遅い）を併記します。<br>
+     顯示的是<b>觀測時間</b>。從觀測到公開需要數分鐘到十幾分鐘。同時標示日本時間與臺北時間（臺北比日本慢1小時）。</p>
+
+  <h3>見方・用語 看法與用語</h3>
+  <table class="terms">
+    <tr><th>日本語</th><th>中文</th><th>説明</th></tr>
+    <tr><td>レーダー（反射強度 dBZ）</td><td>雷達回波</td><td>雨雲の強さ。青→緑→黄→赤→紫の順に強い雨</td></tr>
+    <tr><td>風向・風速</td><td>風向・風速</td><td>矢羽は風が<b>吹いていく向き</b>、数字は風速(m/s)。風向の数値は「吹いてくる方位」（度）</td></tr>
+    <tr><td>気温・露点・湿度</td><td>氣溫・露點・相對濕度</td><td>露点は気温と湿度から計算した値</td></tr>
+    <tr><td>当日雨量</td><td>當日降水量</td><td>その日0時からの<b>累積</b>雨量（10分雨量ではない）</td></tr>
+    <tr><td>測站気圧</td><td>測站氣壓</td><td>観測所の高さでの気圧（海面気圧ではない）。山の観測所は低くなるため、地図には出さず、地点の詳細にだけ表示</td></tr>
+    <tr><td>欠測</td><td>缺測</td><td>データが取れていない地点は「—」と表示</td></tr>
+  </table>
+
+  <h3>実験・学習のヒント 實驗與學習提示</h3>
+  <ul>
+    <li>レーダーの不透明度スライダーで、地図の地形・海岸線と見比べてみましょう。</li>
+    <li>観測の地点をタップすると、中国語の地名と全項目が見られます。</li>
+    <li>山の観測所（玉山など）と平地の気温・測站気圧を比べると、標高の影響が分かります。</li>
+    <li>冬の北東季節風の日は、台湾北東部で雨が多く、風向が北東寄りにそろいます。</li>
+  </ul>
+
+  <h3>データ出典・注意 資料來源與注意</h3>
+  <p>提供機關／交通部中央氣象署（政府資料開放授權條款）。地図: © OpenStreetMap contributors。<br>
+     防災・安全の判断には、気象庁・気象署の公式情報を使ってください。このアプリは学習・実験用です。</p>
+</section>
+
+<footer id="credit">提供機關／交通部中央氣象署 資料來源</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
