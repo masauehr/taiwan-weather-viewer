@@ -19,6 +19,13 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 map.attributionControl.addAttribution('資料來源 出典: 交通部中央氣象署');
 
+// 上のバーの高さが変わる（状態表示の行数・文言で折り返しが変わる等）と、地図の枠が上下に動く。
+// Leaflet は枠の大きさの変化に気づかず、地図の中身が一緒にずれて表示範囲がずれて見えるため、
+// 枠の大きさが変わったら、中心を保ったまま地図を更新する（アニメーションなし）
+if (window.ResizeObserver) {
+  new ResizeObserver(() => map.invalidateSize({ animate: false })).observe(document.getElementById('map'));
+}
+
 const $ = (id) => document.getElementById(id);
 const el = {
   time: $('vTime'), status: $('vStatus'), reload: $('vReload'),
