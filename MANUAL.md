@@ -2,6 +2,8 @@
 
 [← README.md に戻る](README.md)
 
+> 台湾データの特徴・蓄積サービスの使い方・今回の修正のまとめは [taiwan-radar-frames の DATA_OVERVIEW.md](https://github.com/masauehr/taiwan-radar-frames/blob/main/DATA_OVERVIEW.md)。
+
 ## 1. 目的
 
 台湾（臺灣）の天気を、中央氣象署の公開データで見る**学習・実験用**のWebアプリ。日本語と中国語（繁体字）を併記する。キー・登録・サーバーは不要で、すべてブラウザだけで動く（Vanilla JS + Leaflet、ビルド不要の静的サイト）。
