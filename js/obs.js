@@ -4,8 +4,7 @@
 import { FEED_BASE, OBS_URL, SCALES, fetchJson, fmtJst, fmtTaipei, onWake, outlineOf, scaleColor } from './common.js';
 
 const POLL_MS = 5 * 60 * 1000;   // 配信の確認間隔（配信は10分ごと）
-const STEP_MS = 500;
-const LAST_PAUSE_MS = 1200;
+const MATCH_MS = 15 * 60 * 1000; // 指定時刻との許容差（超えたら非表示）
 
 // 欠測(-99など)は null
 const num = (x) => {
@@ -75,27 +74,32 @@ function popupHtml(s) {
     '</table>';
 }
 
-export function initObs(map) {
-  const $ = (id) => document.getElementById(id);
-  const el = {
-    kind: $('obsKind'), status: $('obsStatus'), legend: $('obsLegend'), reload: $('obsReload'),
-    play: $('oPlay'), slider: $('oSlider'), time: $('oTime'),
-  };
+export function initObs(map, onUpdate) {
   const layer = L.layerGroup();
 
   let stations = [];          // 地点の一覧 [{id,name,county,town,lat,lon,alt}]
   let snaps = [];             // スナップショット [{t(ms), file, v}]（t昇順）
-  let idx = -1;
-  let kind = el.kind.value;
+  let idx = -1;               // 表示中のスナップショット（-1=なし）
+  let kind = 'wind';
   let busy = false;
   let active = false;
   let error = false;
   let fromFeed = false;       // 配信から読んでいるか（false=気象署の最新ファイルを直接取得）
   let keys = DEFAULT_KEYS;
-  let playing = false;
-  let timer = null;
   let pollId = null;
-  let fetchedAt = 0;
+
+  // 指定時刻に最も近いスナップショット。許容差を超えるなら -1。時刻なし(null)・最新のみのときは最新
+  function pick(t) {
+    if (!snaps.length) return -1;
+    if (t == null || !fromFeed) return snaps.length - 1;
+    let best = -1;
+    let bestD = Infinity;
+    snaps.forEach((s, k) => {
+      const d = Math.abs(s.t - t);
+      if (d < bestD) { bestD = d; best = k; }
+    });
+    return bestD > MATCH_MS ? -1 : best;
+  }
 
   // 配信のスナップショットを地点の情報と結合した配列にする
   function current() {
@@ -111,11 +115,11 @@ export function initObs(map) {
     return out;
   }
 
-  function buildLegend() {
+  function legendHtml() {
     const k = KINDS[kind];
     const sc = SCALES[k.scale];
     // 先頭は「次の閾値未満」、2番目以降は「閾値以上」
-    el.legend.innerHTML = sc.th.map((th, i) =>
+    return sc.th.map((th, i) =>
       '<span class="lg"><i style="background:' + sc.cl[i] + '"></i>' + (i === 0 ? '<' + sc.th[1] : '≥' + th) + '</span>').join('') +
       '<span class="lg unit">' + k.unit + '</span>';
   }
@@ -139,8 +143,7 @@ export function initObs(map) {
 
   function render() {
     layer.clearLayers();
-    updateStatus();
-    const list = current();
+    const list = idx >= 0 ? current() : [];
     if (!list.length) return;
     const z = map.getZoom();
     const b = map.getBounds().pad(0.05);
@@ -163,22 +166,14 @@ export function initObs(map) {
     }
   }
 
-  function show(i) {
-    if (!snaps.length) { idx = -1; el.time.textContent = '-'; render(); return; }
-    idx = ((i % snaps.length) + snaps.length) % snaps.length;
-    el.slider.value = String(idx);
-    const t = snaps[idx].t;
-    el.time.textContent = fmtJst(t) + ' JST ／ 台北 ' + fmtTaipei(t);
-    render();
-  }
-
-  function updateStatus() {
-    if (error && !snaps.length) { el.status.textContent = '取得失敗 取得失敗（再読込を押してください）'; return; }
-    if (!snaps.length) { el.status.textContent = '取得中… 取得中…'; return; }
+  function status() {
+    if (error && !snaps.length) return '観測 觀測: 取得失敗 取得失敗';
+    if (!snaps.length) return '観測 觀測: 取得中… 取得中…';
     const last = snaps[snaps.length - 1].t;
     const lag = Math.max(0, Math.round((Date.now() - last) / 60000));
-    el.status.textContent = current().length + '局 ／ ' + snaps.length + '回分' + (fromFeed ? '' : '（最新のみ）') +
-      ' ／ 最新の観測 ' + fmtJst(last) + ' JST（台北 ' + fmtTaipei(last) + '）／ ' + lag + ' 分前' +
+    const shownT = idx >= 0 ? fmtJst(snaps[idx].t) + ' JST' : 'この時刻の観測なし 此時刻無觀測';
+    return '観測 觀測: ' + snaps.length + '回分' + (fromFeed ? '' : '（最新のみ）') + ' ／ 表示 ' + shownT +
+      ' ／ 最新 ' + fmtJst(last) + ' JST（台北 ' + fmtTaipei(last) + '）／ ' + lag + ' 分前' +
       (error ? ' ／ 更新失敗（前回の表示を継続）' : '');
   }
 
@@ -195,10 +190,7 @@ export function initObs(map) {
       const j = await fetchJson(FEED_BASE + f.file);
       return { t: Date.parse(j.t), file: f.file, v: j.v };
     }));
-    const wasLast = idx < 0 || idx === snaps.length - 1;
     snaps = next.sort((a, b) => a.t - b.t);
-    el.slider.max = String(Math.max(0, snaps.length - 1));
-    idx = wasLast || idx >= snaps.length ? snaps.length - 1 : idx;
     fromFeed = true;
     return true;
   }
@@ -209,8 +201,6 @@ export function initObs(map) {
     keys = DEFAULT_KEYS;
     stations = meta;
     snaps = [{ t: snap.t, file: 'latest', v: snap.v }];
-    el.slider.max = '0';
-    idx = 0;
     fromFeed = false;
   }
 
@@ -222,56 +212,43 @@ export function initObs(map) {
       try { ok = await loadFromFeed(); } catch (e) { ok = false; }
       if (!ok) await loadLatestOnly();
       error = false;
-      fetchedAt = Date.now();
     } catch (e) {
       error = true;
     } finally {
       busy = false;
     }
-    show(idx);
+    onUpdate();
   }
 
-  function stop() {
-    playing = false;
-    clearTimeout(timer);
-    el.play.textContent = '▶ 再生 播放';
-  }
-  function play() {
-    if (snaps.length < 2) return;
-    playing = true;
-    el.play.textContent = '⏸ 停止 暫停';
-    const tick = () => {
-      if (!playing) return;
-      const next = (idx + 1) % snaps.length;
-      show(next);
-      timer = setTimeout(tick, next === snaps.length - 1 ? LAST_PAUSE_MS : STEP_MS);
-    };
-    timer = setTimeout(tick, STEP_MS);
-  }
-
-  el.play.addEventListener('click', () => (playing ? stop() : play()));
-  el.slider.addEventListener('input', () => { stop(); show(parseInt(el.slider.value, 10)); });
-  el.kind.addEventListener('change', () => { kind = el.kind.value; buildLegend(); render(); });
-  el.reload.addEventListener('click', () => load());
   map.on('moveend', () => { if (active) render(); });
   onWake(() => load());
-  setInterval(() => { if (active) updateStatus(); }, 30000);
 
   return {
     activate() {
       active = true;
       layer.addTo(map);
-      buildLegend();
       load();
       pollId = setInterval(load, POLL_MS);
     },
     deactivate() {
       active = false;
-      stop();
       clearInterval(pollId);
       map.removeLayer(layer);
       layer.clearLayers();
+      snaps = [];
+      stations = [];
+      idx = -1;
+      onUpdate();
     },
-    get fetchedAt() { return fetchedAt; },
+    times: () => snaps.map((s) => s.t),
+    // 指定時刻に近いスナップショットを表示（null=最新）
+    show(t) {
+      idx = pick(t);
+      render();
+    },
+    setKind(k) { kind = k; render(); },
+    legendHtml,
+    status,
+    load,
   };
 }

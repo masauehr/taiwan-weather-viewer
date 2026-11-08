@@ -12,57 +12,49 @@
 <header>
   <h1>台湾天気ビューア <small>臺灣天氣</small></h1>
   <nav id="tabs">
-    <button data-tab="radar">レーダー 雷達</button>
-    <button data-tab="obs">観測 觀測</button>
+    <button data-tab="weather">天気 天氣</button>
     <button data-tab="about">仕組み 說明</button>
   </nav>
 </header>
 
-<!-- レーダータブの上部: 状態と時刻 -->
-<div class="bar" id="radarBar" hidden>
+<!-- 天気タブの上部: 時刻・表示する層・種別・凡例・状態 -->
+<div class="bar" id="viewBar">
   <div class="row">
-    <span id="rTime" class="time">-</span>
-    <button id="rReload" title="再読込 重新載入">↻</button>
+    <span id="vTime" class="time">-</span>
+    <button id="vReload" title="再読込 重新載入">↻</button>
   </div>
-  <div id="rStatus" class="status">取得中… 取得中…</div>
-</div>
-
-<!-- 観測タブの上部: 種別・凡例・状態 -->
-<div class="bar" id="obsBar" hidden>
-  <div class="row">
-    <select id="obsKind" aria-label="種別 種類">
+  <div class="row layers">
+    <label><input type="checkbox" id="chkRadar" checked> レーダー 雷達</label>
+    <label><input type="checkbox" id="chkObs" checked> 観測 觀測</label>
+    <select id="obsKind" aria-label="観測の種別 觀測種類">
       <option value="wind">風 風向風速</option>
       <option value="temp">気温 氣溫</option>
       <option value="dew">露点 露點</option>
       <option value="hum">湿度 濕度</option>
       <option value="rain">当日雨量 當日累積雨量</option>
     </select>
-    <button id="obsReload" title="再読込 重新載入">↻</button>
   </div>
-  <div class="row">
-    <button id="oPlay">▶ 再生 播放</button>
-    <input id="oSlider" type="range" min="0" max="0" value="0" aria-label="時刻 時間">
-  </div>
-  <div id="oTime" class="time sm">-</div>
   <div id="obsLegend" class="legend"></div>
-  <div id="obsStatus" class="status">取得中… 取得中…</div>
+  <div id="vStatus" class="status">取得中… 取得中…</div>
 </div>
 
 <div id="map"></div>
 
-<!-- レーダータブの下部: 再生・スライダー・不透明度・凡例 -->
-<div class="bar bottom" id="radarBottom" hidden>
+<!-- 天気タブの下部: 再生・共通スライダー・レーダーの不透明度と凡例 -->
+<div class="bar bottom" id="viewBottom">
   <div class="row">
-    <button id="rPlay">▶ 再生 播放</button>
-    <input id="rSlider" type="range" min="0" max="0" value="0" aria-label="時刻 時間">
+    <button id="vPlay">▶ 再生 播放</button>
+    <input id="vSlider" type="range" min="0" max="0" value="0" aria-label="時刻 時間">
   </div>
-  <div class="row">
-    <label class="opa">不透明度 透明度
-      <input id="rOpacity" type="range" min="0.2" max="1" step="0.05" value="0.75">
-    </label>
+  <div id="rLegendBox">
+    <div class="row">
+      <label class="opa">レーダーの不透明度 雷達透明度
+        <input id="rOpacity" type="range" min="0.2" max="1" step="0.05" value="0.75">
+      </label>
+    </div>
+    <div id="rLegend" class="gradbar" title="反射強度 回波強度 (dBZ)"></div>
+    <div class="ticks"><span>0</span><span>20</span><span>40</span><span>60 dBZ</span></div>
   </div>
-  <div id="rLegend" class="gradbar" title="反射強度 回波強度 (dBZ)"></div>
-  <div class="ticks"><span>0</span><span>20</span><span>40</span><span>60 dBZ</span></div>
 </div>
 
 <section id="about" hidden>
@@ -72,8 +64,8 @@
 
   <h3>データの流れ 資料流程</h3>
   <ol>
-    <li><b>レーダー 雷達</b>: 気象署の画像を <a href="https://github.com/masauehr/taiwan-radar-frames">taiwan-radar-frames</a> が10分ごとに取得し、背景を透明にして過去3時間分を配信。このアプリはそれを読み込んでループ再生します。</li>
-    <li><b>観測 觀測</b>: 気象署が10分ごとに公開する地上観測（有人・主要局 約360地点）を、同じ配信リポジトリが10分ごとに保存し、過去3時間分をスライダーで再生できます。配信が使えないときは、気象署の最新ファイルをブラウザが直接取得します（最新のみ）。</li>
+    <li><b>レーダー 雷達</b>（天気タブ）: 気象署の画像を <a href="https://github.com/masauehr/taiwan-radar-frames">taiwan-radar-frames</a> が10分ごとに取得し、背景を透明にして過去3時間分を配信。このアプリはそれを読み込んでループ再生します。</li>
+    <li><b>観測 觀測</b>（天気タブ）: 気象署が10分ごとに公開する地上観測（有人・主要局 約360地点）を、同じ配信リポジトリが10分ごとに保存し、過去3時間分をスライダーで再生できます。配信が使えないときは、気象署の最新ファイルをブラウザが直接取得します（最新のみ）。</li>
   </ol>
 
   <h3>時刻について 關於時間</h3>
@@ -93,8 +85,11 @@
 
   <h3>実験・学習のヒント 實驗與學習提示</h3>
   <ul>
+    <li><b>レーダーと観測は同じ地図に重なります。</b>下のスライダー1本で、同じ時刻の雨雲と風・気温を一緒に動かせます（それぞれ最も近い時刻を表示し、15分以上離れるとその層は消えます）。</li>
+    <li>上のチェックで、レーダーと観測を個別にオン・オフできます。雨雲だけ、風だけ、も見られます。</li>
     <li>レーダーの不透明度スライダーで、地図の地形・海岸線と見比べてみましょう。</li>
     <li>観測の地点をタップすると、中国語の地名と全項目が見られます。</li>
+    <li>雨雲の強いところで風向がどう変わるか（雨の縁で風が収束するなど）を、時刻を動かして観察してみましょう。</li>
     <li>山の観測所（玉山など）と平地の気温・測站気圧を比べると、標高の影響が分かります。</li>
     <li>冬の北東季節風の日は、台湾北東部で雨が多く、風向が北東寄りにそろいます。</li>
   </ul>

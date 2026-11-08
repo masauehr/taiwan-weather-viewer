@@ -30,6 +30,10 @@ h1 small { font-size: 12px; color: var(--sub); font-weight: normal; margin-left:
 .bar.bottom { border-top: 1px solid #243b66; }
 .row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .row:last-child { margin-bottom: 0; }
+.layers { flex-wrap: wrap; gap: 4px 12px; }
+.layers label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+.layers select { flex: 1 1 140px; }
+select:disabled { opacity: .45; }
 .time { font-size: 15px; font-weight: bold; color: #fff; flex: 1; }
 .time.sm { font-size: 13px; flex: none; }
 .status { font-size: 11px; color: var(--sub); margin-top: 2px; }

@@ -1,58 +1,39 @@
-// レーダータブ: 台湾レーダー（taiwan-radar-frames の配信）を過去3時間分ループ再生する
-import { FEED_BASE, RADAR_PALETTE, fetchJson, fmtJst, fmtTaipei, onWake } from './common.js';
+// レーダー層: 台湾レーダー（taiwan-radar-frames の配信）を地図に重ねる。
+// 画面部品は持たない。時刻は main.js の共通スライダーが決め、show(時刻) で最も近い1コマだけを表示する。
+import { FEED_BASE, fetchJson, fmtJst, fmtTaipei, onWake } from './common.js';
 
 const POLL_MS = 5 * 60 * 1000;   // index.json の確認間隔（配信は10分ごと）
-const STEP_MS = 400;             // 再生の1コマの長さ
-const LAST_PAUSE_MS = 1200;      // 最新コマで少し止まってからループ
+const MATCH_MS = 15 * 60 * 1000; // 指定時刻との許容差（超えたら非表示）
 
-export function initRadar(map) {
-  const $ = (id) => document.getElementById(id);
-  const el = {
-    play: $('rPlay'), slider: $('rSlider'), time: $('rTime'),
-    opacity: $('rOpacity'), status: $('rStatus'), legend: $('rLegend'), reload: $('rReload'),
-  };
-
-  let frames = [];        // [{t(ms), file, layer}]
-  let idx = -1;
-  let playing = false;
-  let timer = null;
+export function initRadar(map, onUpdate) {
+  let frames = [];        // [{t(ms), file, layer}]（t昇順）
+  let shown = -1;         // 表示中のコマ（-1=なし）
+  let alpha = 0.75;
   let busy = false;
   let active = false;
   let error = false;
-  let fetchedAt = 0;
-  let bounds = null;
   let pollId = null;
-  let alpha = parseFloat(el.opacity.value);
 
-  // 凡例: dBZ 0〜64 のグラデーション
-  const stops = RADAR_PALETTE.map((c, i) => 'rgb(' + c.join(',') + ') ' + (i / (RADAR_PALETTE.length - 1) * 100).toFixed(1) + '%');
-  el.legend.style.background = 'linear-gradient(to right,' + stops.join(',') + ')';
-
-  const frameOpacity = (i) => (i === idx ? alpha : 0);
-
-  function show(i) {
-    if (!frames.length) { idx = -1; return; }
-    idx = ((i % frames.length) + frames.length) % frames.length;
-    frames.forEach((f, k) => f.layer.setOpacity(frameOpacity(k)));
-    el.slider.value = String(idx);
-    const t = frames[idx].t;
-    el.time.textContent = fmtJst(t) + ' JST ／ 台北 ' + fmtTaipei(t);
+  // 指定時刻に最も近いコマ。許容差を超えるなら -1。時刻なし(null)は最新
+  function pick(t) {
+    if (!frames.length) return -1;
+    if (t == null) return frames.length - 1;
+    let best = -1;
+    let bestD = Infinity;
+    frames.forEach((f, k) => {
+      const d = Math.abs(f.t - t);
+      if (d < bestD) { bestD = d; best = k; }
+    });
+    return bestD > MATCH_MS ? -1 : best;
   }
 
-  function updateStatus() {
-    if (error && !frames.length) { el.status.textContent = '取得失敗 取得失敗（再読込を押してください）'; return; }
-    if (!frames.length) { el.status.textContent = '取得中… 取得中…'; return; }
-    const last = frames[frames.length - 1].t;
-    const lag = Math.max(0, Math.round((Date.now() - last) / 60000));
-    el.status.textContent = frames.length + '枚 ／ 最新の観測 ' + fmtJst(last) + ' JST（台北 ' + fmtTaipei(last) +
-      '）／ 観測から ' + lag + ' 分前' + (error ? ' ／ 更新失敗（前回の表示を継続）' : '');
+  function apply() {
+    frames.forEach((f, k) => f.layer.setOpacity(k === shown ? alpha : 0));
   }
 
   // index.json に合わせて、新しいコマを追加・消えたコマを削除
   function sync(index) {
-    bounds = index.bounds;
     const keep = new Set(index.frames.map((f) => f.file));
-    const wasLast = idx === frames.length - 1;
     frames = frames.filter((f) => {
       if (keep.has(f.file)) return true;
       map.removeLayer(f.layer);
@@ -61,15 +42,11 @@ export function initRadar(map) {
     const have = new Set(frames.map((f) => f.file));
     for (const f of index.frames) {
       if (have.has(f.file)) continue;
-      const layer = L.imageOverlay(FEED_BASE + f.file, bounds, { opacity: 0, interactive: false });
+      const layer = L.imageOverlay(FEED_BASE + f.file, index.bounds, { opacity: 0, interactive: false });
       layer.addTo(map);
       frames.push({ t: Date.parse(f.t), file: f.file, layer });
     }
     frames.sort((a, b) => a.t - b.t);
-    el.slider.max = String(Math.max(0, frames.length - 1));
-    if (idx < 0 || wasLast) idx = frames.length - 1;
-    else if (idx >= frames.length) idx = frames.length - 1;
-    return index.attribution;
   }
 
   async function load() {
@@ -78,57 +55,47 @@ export function initRadar(map) {
     try {
       sync(await fetchJson(FEED_BASE + 'index.json'));
       error = false;
-      fetchedAt = Date.now();
     } catch (e) {
       error = true;
     } finally {
       busy = false;
     }
-    show(idx);
-    updateStatus();
+    onUpdate();
   }
 
-  function stop() {
-    playing = false;
-    clearTimeout(timer);
-    el.play.textContent = '▶ 再生 播放';
-  }
-  function play() {
-    if (!frames.length) return;
-    playing = true;
-    el.play.textContent = '⏸ 停止 暫停';
-    const tick = () => {
-      if (!playing) return;
-      const next = (idx + 1) % frames.length;
-      show(next);
-      timer = setTimeout(tick, next === frames.length - 1 ? LAST_PAUSE_MS : STEP_MS);
-    };
-    timer = setTimeout(tick, STEP_MS);
-  }
-
-  el.play.addEventListener('click', () => (playing ? stop() : play()));
-  el.slider.addEventListener('input', () => { stop(); show(parseInt(el.slider.value, 10)); });
-  el.opacity.addEventListener('input', () => { alpha = parseFloat(el.opacity.value); show(idx); });
-  el.reload.addEventListener('click', () => load());
   onWake(() => load());
-  setInterval(() => { if (active) updateStatus(); }, 30000); // 「◯分前」の表示を更新
 
   return {
-    // タブを開いたとき: 取得して自動再生
     activate() {
       active = true;
-      load().then(() => { if (frames.length && !playing) { show(frames.length - 1); play(); } });
+      load();
       pollId = setInterval(load, POLL_MS);
     },
-    // タブを閉じたとき: 停止し、画像を解放（メモリ節約）
+    // 無効化: 画像を地図から外してメモリを空ける
     deactivate() {
       active = false;
-      stop();
       clearInterval(pollId);
       frames.forEach((f) => map.removeLayer(f.layer));
       frames = [];
-      idx = -1;
+      shown = -1;
+      onUpdate();
     },
-    get fetchedAt() { return fetchedAt; },
+    times: () => frames.map((f) => f.t),
+    // 指定時刻に近いコマを表示（null=最新）
+    show(t) {
+      shown = pick(t);
+      apply();
+    },
+    setOpacity(a) { alpha = a; apply(); },
+    get shownTime() { return shown >= 0 ? frames[shown].t : null; },
+    status() {
+      if (error && !frames.length) return 'レーダー 雷達: 取得失敗 取得失敗';
+      if (!frames.length) return 'レーダー 雷達: 取得中… 取得中…';
+      const last = frames[frames.length - 1].t;
+      const lag = Math.max(0, Math.round((Date.now() - last) / 60000));
+      return 'レーダー 雷達: ' + frames.length + '枚 ／ 最新 ' + fmtJst(last) + ' JST（台北 ' + fmtTaipei(last) + '）／ ' + lag + ' 分前' +
+        (error ? ' ／ 更新失敗（前回の表示を継続）' : '');
+    },
+    load,
   };
 }
