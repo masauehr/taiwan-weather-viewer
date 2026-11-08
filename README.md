@@ -2,11 +2,14 @@
 
 台湾の天気を、中央氣象署の公開データで見る**学習・実験用**のWebアプリ。日本語と中国語（繁体字）を併記。キー・登録・サーバーは不要で、ブラウザだけで動く。
 
+**公開URL: [台湾天気ビューア](https://masauehr.github.io/taiwan-weather-viewer/)**（GitHub Pages・スマホのブラウザでそのまま使える）
+
 詳しくは [MANUAL.md](MANUAL.md)（改修履歴は9節）を参照。台湾データの特徴と蓄積サービスは [taiwan-radar-frames の DATA_OVERVIEW.md](https://github.com/masauehr/taiwan-radar-frames/blob/main/DATA_OVERVIEW.md) にまとめている。
 
 - **画面**: 天気（**レーダーと観測を1つの地図に重ねて**、共通のスライダー1本で過去3時間を再生。層は個別にオン・オフ）／仕組み（学習用の説明）
 - **データ**: レーダーも観測も [taiwan-radar-frames](https://github.com/masauehr/taiwan-radar-frames) の配信（観測は配信に無い間だけ気象署の公開ファイルを直接取得・最新のみ）
 - **出典（表示義務）**: 提供機關／交通部中央氣象署（政府資料開放授權條款）。地図: © OpenStreetMap contributors
+- **関連**: [衛星レーダーアプリ（iphone-weather-app）](https://masauehr.github.io/iphone-weather-app/)の[台湾]・[台湾観測]も、同じ配信を読む
 
 ## 台湾データの特徴（要点）
 
