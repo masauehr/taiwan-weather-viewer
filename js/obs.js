@@ -26,8 +26,17 @@ const KINDS = {
     },
   },
   hum: { label: '湿度 濕度', unit: '%', scale: 'humidity', digits: 0, val: (s) => s.rh },
+  pres: { label: '気圧 氣壓（海面に換算 換算至海平面）', unit: 'hPa', scale: 'pressure', digits: 0, val: slpOf },
   rain: { label: '当日雨量 當日累積雨量', unit: 'mm', scale: 'rain', digits: 1, val: (s) => s.rain },
 };
+
+// 測站気圧を海面気圧に換算する（標準大気の式。気温は観測所の気温で代用）。標高が高いと誤差が大きいので、SLP_MAX_ALT 以下の局だけ
+const SLP_MAX_ALT = 500;
+const seaLevel = (p, t, h) => p * Math.pow(1 - 0.0065 * h / (t + 0.0065 * h + 273.15), -5.257);
+function slpOf(s) {
+  if (s.pres == null || s.temp == null || s.alt == null || s.alt > SLP_MAX_ALT) return null;
+  return seaLevel(s.pres, s.temp, s.alt);
+}
 
 const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西']; // 日本語・中国語で同じ字
 const compass = (deg) => COMPASS[Math.round(deg / 45) % 8];
@@ -70,7 +79,8 @@ function popupHtml(s) {
     '<tr><th>風 風</th><td>' + wind + '</td></tr>' +
     '<tr><th>最大瞬間風速 瞬間陣風</th><td>' + fmt(s.gust, 1, 'm/s') + '</td></tr>' +
     '<tr><th>当日雨量 當日降水量</th><td>' + fmt(s.rain, 1, 'mm') + '</td></tr>' +
-    '<tr><th>測站気圧 測站氣壓</th><td>' + fmt(s.pres, 1, 'hPa') + ' <small>（海面気圧ではない）</small></td></tr>' +
+    '<tr><th>測站気圧 測站氣壓</th><td>' + fmt(s.pres, 1, 'hPa') + ' <small>（観測所の高さの気圧）</small></td></tr>' +
+    '<tr><th>海面換算気圧 換算海平面氣壓</th><td>' + (slpOf(s) == null ? '—' : fmt(slpOf(s), 1, 'hPa') + ' <small>（推定）</small>') + '</td></tr>' +
     '</table>';
 }
 

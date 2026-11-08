@@ -71,3 +71,6 @@ table.terms th, table.terms td { border: 1px solid #2c3e66; padding: 4px 6px; te
 table.terms th { background: #16213e; }
 
 footer { background: var(--head); font-size: 10px; color: #aaa; padding: 3px 10px; flex-shrink: 0; text-align: center; }
+#about code { font-size: 11px; background: #16213e; padding: 0 3px; border-radius: 3px; word-break: break-all; }
+#about h4 { font-size: 12px; margin: 10px 0 4px; }
+table.terms { margin: 6px 0; }
