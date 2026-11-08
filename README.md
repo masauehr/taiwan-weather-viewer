@@ -4,8 +4,8 @@
 
 詳しくは [MANUAL.md](MANUAL.md) を参照。
 
-- **画面**: レーダー（過去3時間ループ）／観測（風・気温・露点・湿度・当日雨量、363局）／仕組み（学習用の説明）
-- **データ**: レーダーは [taiwan-radar-frames](https://github.com/masauehr/taiwan-radar-frames) の配信、観測は気象署の公開ファイル
+- **画面**: レーダー（過去3時間ループ）／観測（風・気温・露点・湿度・当日雨量、363局・**過去3時間分をスライダーで再生**）／仕組み（学習用の説明）
+- **データ**: レーダーも観測も [taiwan-radar-frames](https://github.com/masauehr/taiwan-radar-frames) の配信（観測は配信に無い間だけ気象署の公開ファイルを直接取得・最新のみ）
 - **出典（表示義務）**: 提供機關／交通部中央氣象署（政府資料開放授權條款）。地図: © OpenStreetMap contributors
 
 ## ローカルで動かす

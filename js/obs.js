@@ -1,7 +1,11 @@
-// 観測タブ: 台湾の地上観測（363局・10分更新）を、風の矢羽や数値ラベルで表示する
-import { OBS_URL, SCALES, fetchJson, fmtJst, fmtTaipei, onWake, outlineOf, scaleColor } from './common.js';
+// 観測タブ: 台湾の地上観測（363局・10分更新）を、風の矢羽や数値ラベルで表示する。
+// 配信（taiwan-radar-frames）が10分ごとに保存したスナップショットを、過去3時間分スライダーで再生できる。
+// 配信に観測が無い間は、気象署の最新ファイルを直接取得する（最新のみ）。
+import { FEED_BASE, OBS_URL, SCALES, fetchJson, fmtJst, fmtTaipei, onWake, outlineOf, scaleColor } from './common.js';
 
-const POLL_MS = 10 * 60 * 1000;
+const POLL_MS = 5 * 60 * 1000;   // 配信の確認間隔（配信は10分ごと）
+const STEP_MS = 500;
+const LAST_PAUSE_MS = 1200;
 
 // 欠測(-99など)は null
 const num = (x) => {
@@ -29,28 +33,30 @@ const KINDS = {
 const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西']; // 日本語・中国語で同じ字
 const compass = (deg) => COMPASS[Math.round(deg / 45) % 8];
 
-function parse(json) {
-  const out = [];
+// 配信のスナップショットの値の並び（taiwan-radar-frames の OBS_KEYS と同じ）
+const DEFAULT_KEYS = ['wd', 'ws', 'temp', 'rh', 'rain', 'gust', 'pres', 'weather'];
+
+// 気象署の最新ファイル → { meta: 地点の一覧, snap: {t, v} }（配信と同じ形にそろえる）
+function parseLatest(json) {
+  const meta = [];
+  const v = {};
   let tmax = 0;
   for (const s of json.cwaopendata.dataset.Station) {
     const w = s.WeatherElement || {};
-    const wgs = ((s.GeoInfo && s.GeoInfo.Coordinates) || []).find((c) => c.CoordinateName === 'WGS84');
-    if (!wgs) continue;
+    const geo = s.GeoInfo || {};
+    const wgs = (geo.Coordinates || []).find((c) => c.CoordinateName === 'WGS84');
+    if (!wgs || !s.StationId) continue;
     const lat = parseFloat(wgs.StationLatitude);
     const lon = parseFloat(wgs.StationLongitude);
     if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
     const t = s.ObsTime && s.ObsTime.DateTime ? Date.parse(s.ObsTime.DateTime) : 0;
     if (t > tmax) tmax = t;
-    out.push({
-      name: s.StationName, county: (s.GeoInfo || {}).CountyName || '', town: (s.GeoInfo || {}).TownName || '',
-      alt: num((s.GeoInfo || {}).StationAltitude), lat, lon,
-      weather: w.Weather && w.Weather !== '-99' ? w.Weather : '',
-      wd: num(w.WindDirection), ws: num(w.WindSpeed), gust: num(w.GustInfo && w.GustInfo.PeakGustSpeed),
-      temp: num(w.AirTemperature), rh: num(w.RelativeHumidity), pres: num(w.AirPressure),
-      rain: num(w.Now && w.Now.Precipitation),
-    });
+    meta.push({ id: s.StationId, name: s.StationName, county: geo.CountyName || '', town: geo.TownName || '', lat, lon, alt: num(geo.StationAltitude) });
+    v[s.StationId] = [num(w.WindDirection), num(w.WindSpeed), num(w.AirTemperature), num(w.RelativeHumidity),
+      num(w.Now && w.Now.Precipitation), num(w.GustInfo && w.GustInfo.PeakGustSpeed), num(w.AirPressure),
+      w.Weather && w.Weather !== '-99' ? w.Weather : null];
   }
-  return { stations: out, t: tmax };
+  return { meta, snap: { t: tmax, v } };
 }
 
 const fmt = (v, d, unit) => (v == null ? '—' : v.toFixed(d) + ' ' + unit);
@@ -71,16 +77,39 @@ function popupHtml(s) {
 
 export function initObs(map) {
   const $ = (id) => document.getElementById(id);
-  const el = { kind: $('obsKind'), status: $('obsStatus'), legend: $('obsLegend'), reload: $('obsReload') };
+  const el = {
+    kind: $('obsKind'), status: $('obsStatus'), legend: $('obsLegend'), reload: $('obsReload'),
+    play: $('oPlay'), slider: $('oSlider'), time: $('oTime'),
+  };
   const layer = L.layerGroup();
 
-  let data = { stations: [], t: 0 };
+  let stations = [];          // 地点の一覧 [{id,name,county,town,lat,lon,alt}]
+  let snaps = [];             // スナップショット [{t(ms), file, v}]（t昇順）
+  let idx = -1;
   let kind = el.kind.value;
   let busy = false;
   let active = false;
   let error = false;
-  let fetchedAt = 0;
+  let fromFeed = false;       // 配信から読んでいるか（false=気象署の最新ファイルを直接取得）
+  let keys = DEFAULT_KEYS;
+  let playing = false;
+  let timer = null;
   let pollId = null;
+  let fetchedAt = 0;
+
+  // 配信のスナップショットを地点の情報と結合した配列にする
+  function current() {
+    const sn = snaps[idx];
+    if (!sn) return [];
+    const ix = Object.fromEntries(keys.map((k, i) => [k, i]));
+    const out = [];
+    for (const m of stations) {
+      const a = sn.v[m.id];
+      if (!a) continue;
+      out.push({ ...m, wd: a[ix.wd], ws: a[ix.ws], temp: a[ix.temp], rh: a[ix.rh], rain: a[ix.rain], gust: a[ix.gust], pres: a[ix.pres], weather: a[ix.weather] });
+    }
+    return out;
+  }
 
   function buildLegend() {
     const k = KINDS[kind];
@@ -111,12 +140,13 @@ export function initObs(map) {
   function render() {
     layer.clearLayers();
     updateStatus();
-    if (!data.stations.length) return;
+    const list = current();
+    if (!list.length) return;
     const z = map.getZoom();
     const b = map.getBounds().pad(0.05);
     const grid = { 6: 1.2, 7: 0.6, 8: 0.25, 9: 0.1 }[z] || 0; // ズームアウト時はセルごとに1局へ間引く
     const seen = new Set();
-    for (const s of data.stations) {
+    for (const s of list) {
       if (!b.contains([s.lat, s.lon])) continue;
       const v = KINDS[kind].val(s);
       if (v == null) continue;
@@ -133,19 +163,64 @@ export function initObs(map) {
     }
   }
 
+  function show(i) {
+    if (!snaps.length) { idx = -1; el.time.textContent = '-'; render(); return; }
+    idx = ((i % snaps.length) + snaps.length) % snaps.length;
+    el.slider.value = String(idx);
+    const t = snaps[idx].t;
+    el.time.textContent = fmtJst(t) + ' JST ／ 台北 ' + fmtTaipei(t);
+    render();
+  }
+
   function updateStatus() {
-    if (error && !data.stations.length) { el.status.textContent = '取得失敗 取得失敗（再読込を押してください）'; return; }
-    if (!data.stations.length) { el.status.textContent = '取得中… 取得中…'; return; }
-    const lag = Math.max(0, Math.round((Date.now() - data.t) / 60000));
-    el.status.textContent = data.stations.length + '局 ／ 観測 ' + fmtJst(data.t) + ' JST（台北 ' + fmtTaipei(data.t) +
-      '）／ ' + lag + ' 分前' + (error ? ' ／ 更新失敗（前回の表示を継続）' : '');
+    if (error && !snaps.length) { el.status.textContent = '取得失敗 取得失敗（再読込を押してください）'; return; }
+    if (!snaps.length) { el.status.textContent = '取得中… 取得中…'; return; }
+    const last = snaps[snaps.length - 1].t;
+    const lag = Math.max(0, Math.round((Date.now() - last) / 60000));
+    el.status.textContent = current().length + '局 ／ ' + snaps.length + '回分' + (fromFeed ? '' : '（最新のみ）') +
+      ' ／ 最新の観測 ' + fmtJst(last) + ' JST（台北 ' + fmtTaipei(last) + '）／ ' + lag + ' 分前' +
+      (error ? ' ／ 更新失敗（前回の表示を継続）' : '');
+  }
+
+  // 配信から観測を読む。観測が無ければ false
+  async function loadFromFeed() {
+    const index = await fetchJson(FEED_BASE + 'index.json');
+    const o = index.obs;
+    if (!o || !o.frames || !o.frames.length) return false;
+    keys = o.keys || DEFAULT_KEYS;
+    if (!stations.length) stations = (await fetchJson(FEED_BASE + o.stations)).stations;
+    const have = new Map(snaps.map((s) => [s.file, s]));
+    const next = await Promise.all(o.frames.map(async (f) => {
+      if (have.has(f.file)) return have.get(f.file);
+      const j = await fetchJson(FEED_BASE + f.file);
+      return { t: Date.parse(j.t), file: f.file, v: j.v };
+    }));
+    const wasLast = idx < 0 || idx === snaps.length - 1;
+    snaps = next.sort((a, b) => a.t - b.t);
+    el.slider.max = String(Math.max(0, snaps.length - 1));
+    idx = wasLast || idx >= snaps.length ? snaps.length - 1 : idx;
+    fromFeed = true;
+    return true;
+  }
+
+  // 気象署の最新ファイルを直接取得（配信に観測が無いときの代替・最新のみ）
+  async function loadLatestOnly() {
+    const { meta, snap } = parseLatest(await fetchJson(OBS_URL));
+    keys = DEFAULT_KEYS;
+    stations = meta;
+    snaps = [{ t: snap.t, file: 'latest', v: snap.v }];
+    el.slider.max = '0';
+    idx = 0;
+    fromFeed = false;
   }
 
   async function load() {
     if (busy || !active) return;
     busy = true;
     try {
-      data = parse(await fetchJson(OBS_URL));
+      let ok = false;
+      try { ok = await loadFromFeed(); } catch (e) { ok = false; }
+      if (!ok) await loadLatestOnly();
       error = false;
       fetchedAt = Date.now();
     } catch (e) {
@@ -153,9 +228,29 @@ export function initObs(map) {
     } finally {
       busy = false;
     }
-    render();
+    show(idx);
   }
 
+  function stop() {
+    playing = false;
+    clearTimeout(timer);
+    el.play.textContent = '▶ 再生 播放';
+  }
+  function play() {
+    if (snaps.length < 2) return;
+    playing = true;
+    el.play.textContent = '⏸ 停止 暫停';
+    const tick = () => {
+      if (!playing) return;
+      const next = (idx + 1) % snaps.length;
+      show(next);
+      timer = setTimeout(tick, next === snaps.length - 1 ? LAST_PAUSE_MS : STEP_MS);
+    };
+    timer = setTimeout(tick, STEP_MS);
+  }
+
+  el.play.addEventListener('click', () => (playing ? stop() : play()));
+  el.slider.addEventListener('input', () => { stop(); show(parseInt(el.slider.value, 10)); });
   el.kind.addEventListener('change', () => { kind = el.kind.value; buildLegend(); render(); });
   el.reload.addEventListener('click', () => load());
   map.on('moveend', () => { if (active) render(); });
@@ -172,6 +267,7 @@ export function initObs(map) {
     },
     deactivate() {
       active = false;
+      stop();
       clearInterval(pollId);
       map.removeLayer(layer);
       layer.clearLayers();

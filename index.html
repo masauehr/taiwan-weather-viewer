@@ -39,6 +39,11 @@
     </select>
     <button id="obsReload" title="再読込 重新載入">↻</button>
   </div>
+  <div class="row">
+    <button id="oPlay">▶ 再生 播放</button>
+    <input id="oSlider" type="range" min="0" max="0" value="0" aria-label="時刻 時間">
+  </div>
+  <div id="oTime" class="time sm">-</div>
   <div id="obsLegend" class="legend"></div>
   <div id="obsStatus" class="status">取得中… 取得中…</div>
 </div>
@@ -68,7 +73,7 @@
   <h3>データの流れ 資料流程</h3>
   <ol>
     <li><b>レーダー 雷達</b>: 気象署の画像を <a href="https://github.com/masauehr/taiwan-radar-frames">taiwan-radar-frames</a> が10分ごとに取得し、背景を透明にして過去3時間分を配信。このアプリはそれを読み込んでループ再生します。</li>
-    <li><b>観測 觀測</b>: 気象署が10分ごとに公開する地上観測（有人・主要局 約360地点）を、ブラウザが直接取得します。</li>
+    <li><b>観測 觀測</b>: 気象署が10分ごとに公開する地上観測（有人・主要局 約360地点）を、同じ配信リポジトリが10分ごとに保存し、過去3時間分をスライダーで再生できます。配信が使えないときは、気象署の最新ファイルをブラウザが直接取得します（最新のみ）。</li>
   </ol>
 
   <h3>時刻について 關於時間</h3>

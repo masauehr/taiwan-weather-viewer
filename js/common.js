@@ -1,7 +1,8 @@
 // 共通部品: 定数・時刻表示・タイムアウト・配色
 
-// 台湾レーダーの配信（taiwan-radar-frames）。10分ごとに更新・過去3時間分の透明PNG
-export const FEED_BASE = 'https://masauehr.github.io/taiwan-radar-frames/';
+// 台湾レーダー・地上観測の配信（taiwan-radar-frames）。10分ごとに更新・過去3時間分
+// 開発・検証用に、?feed=http://127.0.0.1:8000/ のように配信元を差し替えられる
+export const FEED_BASE = new URLSearchParams(location.search).get('feed') || 'https://masauehr.github.io/taiwan-radar-frames/';
 // 台湾の地上観測（中央氣象署 O-A0003-001・有人/主要局363地点・10分更新）。公開S3でAPIキー不要
 export const OBS_URL = 'https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0003-001.json';
 
