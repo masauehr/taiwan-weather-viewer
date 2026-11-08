@@ -74,3 +74,5 @@ footer { background: var(--head); font-size: 10px; color: #aaa; padding: 3px 10p
 #about code { font-size: 11px; background: #16213e; padding: 0 3px; border-radius: 3px; word-break: break-all; }
 #about h4 { font-size: 12px; margin: 10px 0 4px; }
 table.terms { margin: 6px 0; }
+p.poplink { margin-top: 6px; font-size: 11px; }
+p.poplink a { color: #1a5fb4; }

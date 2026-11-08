@@ -38,6 +38,8 @@ function slpOf(s) {
   return seaLevel(s.pres, s.temp, s.alt);
 }
 
+const CAN_HOVER = window.matchMedia && window.matchMedia('(hover: hover)').matches;
+
 const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西']; // 日本語・中国語で同じ字
 const compass = (deg) => COMPASS[Math.round(deg / 45) % 8];
 
@@ -67,6 +69,10 @@ function parseLatest(json) {
   return { meta, snap: { t: tmax, v } };
 }
 
+// 気象署の測站ページ。ID は観測データの地点ID(StationId)の末尾1文字を除いたもの
+// （基隆 466940→46694、自動観測局 C2K301→C2K30 など。新北・高雄・台北・離島でもページが開くことを確認済み）
+const stationUrl = (s) => 'https://www.cwa.gov.tw/V8/C/W/OBS_Station.html?ID=' + encodeURIComponent(String(s.id).slice(0, -1));
+
 const fmt = (v, d, unit) => (v == null ? '—' : v.toFixed(d) + ' ' + unit);
 
 function popupHtml(s) {
@@ -81,7 +87,8 @@ function popupHtml(s) {
     '<tr><th>当日雨量 當日降水量</th><td>' + fmt(s.rain, 1, 'mm') + '</td></tr>' +
     '<tr><th>測站気圧 測站氣壓</th><td>' + fmt(s.pres, 1, 'hPa') + ' <small>（観測所の高さの気圧）</small></td></tr>' +
     '<tr><th>海面換算気圧 換算海平面氣壓</th><td>' + (slpOf(s) == null ? '—' : fmt(slpOf(s), 1, 'hPa') + ' <small>（推定）</small>') + '</td></tr>' +
-    '</table>';
+    '</table>' +
+    '<p class="poplink"><a href="' + stationUrl(s) + '" target="_blank" rel="noopener noreferrer">気象署の観測ページ（過去24時間）氣象署觀測頁面 ↗</a></p>';
 }
 
 export function initObs(map, onUpdate) {
@@ -169,10 +176,12 @@ export function initObs(map, onUpdate) {
         seen.add(key);
       }
       const m = markerHtml(s, v);
-      L.marker([s.lat, s.lon], {
+      const mk = L.marker([s.lat, s.lon], {
         icon: L.divIcon({ html: m.html, className: '', iconSize: [0, 0], iconAnchor: m.anchor }),
         keyboard: false,
-      }).bindPopup(popupHtml(s)).addTo(layer);
+      }).bindPopup(popupHtml(s));
+      if (CAN_HOVER) mk.bindTooltip(s.name + (s.county ? '（' + s.county + '）' : ''), { direction: 'top', offset: [0, -12] });
+      mk.addTo(layer);
     }
   }
 
